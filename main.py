@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 app = FastAPI()
 security = HTTPBasic()
 
-SUPABASE_URL = "https://your-project.supabase.co/rest/v1/"
+SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/flights"
 SUPABASE_API_KEY = "your-supabase-service-role-key"  # You will override this in Render
 
 ALLOWED_USERS = {
