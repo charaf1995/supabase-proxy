@@ -1,35 +1,46 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.middleware.cors import CORSMiddleware  # ✅ Added for CORS
 import httpx
 from fastapi.responses import JSONResponse
 import os
 
-app = FastAPI()  # ✅ This defines the FastAPI app
+app = FastAPI()
+
+# ✅ Add CORS middleware (required by SAC)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can restrict this to SAP SAC domains later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 security = HTTPBasic()
 
-# ✅ Supabase project base URL (without table name)
+# ✅ Supabase base URL (no table name)
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 
-# ✅ API key will be securely set in Render environment settings
+# ✅ API key is set via Render environment variable
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
-# ✅ Allowed login credentials (SAC users)
+# ✅ Allowed login credentials (Basic Auth)
 ALLOWED_USERS = {
     "sap_user": "sap_password"
 }
 
-# ✅ Basic Auth validator
+# ✅ Auth check
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     if ALLOWED_USERS.get(credentials.username) != credentials.password:
         raise HTTPException(status_code=403, detail="Invalid credentials")
     return credentials.username
 
-# ✅ Root endpoint (optional)
+# ✅ Optional root endpoint
 @app.get("/")
 def root():
     return {"status": "FastAPI Supabase Proxy is running"}
 
-# ✅ OData-style proxy endpoint
+# ✅ Main proxy endpoint for SAC
 @app.get("/odata/{table_name}")
 async def proxy_odata(
     table_name: str,
@@ -51,7 +62,7 @@ async def proxy_odata(
         response = await client.get(full_url, headers=headers)
 
     if response.status_code != 200:
-        print("Supabase error:", response.status_code, response.text)  # visible in Render logs
+        print("Supabase error:", response.status_code, response.text)
         raise HTTPException(status_code=500, detail=response.text)
 
     return JSONResponse(content={
