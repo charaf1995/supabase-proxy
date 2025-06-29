@@ -35,11 +35,13 @@ async def proxy_odata(
         "Accept": "application/json"
     }
 
-    async with httpx.AsyncClient() as client:
+       async with httpx.AsyncClient() as client:
         response = await client.get(full_url, headers=headers)
 
     if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Error from Supabase")
+        print("Supabase error:", response.status_code, response.text)
+        raise HTTPException(status_code=500, detail=response.text)
+
 
     return JSONResponse(content={
         "@odata.context": f"$metadata#{table_name}",
