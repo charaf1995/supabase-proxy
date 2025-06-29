@@ -1,3 +1,9 @@
+
 fastapi
 uvicorn
 httpx
+python-multipart
+aiofiles
+requests
+python-dotenv
+starlette
