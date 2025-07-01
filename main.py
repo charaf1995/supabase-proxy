@@ -16,8 +16,8 @@ app.add_middleware(
 )
 
 # ✅ Supabase configuration
-SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
-SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")  # Set this in Render environment
+SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/flights"
+SUPABASE_API_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByZmh3cnp0Ymtld2x1anphc3R0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NTE2OTUsImV4cCI6MjA2NTMyNzY5NX0.uVoR9hWAI7bcCOOZVazEEMabGJKIGQ74jDqP6q2HgvQ")  # Set this in Render environment
 
 # ✅ Root endpoint
 @app.get("/")
