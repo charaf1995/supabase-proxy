@@ -1,51 +1,36 @@
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.middleware.cors import CORSMiddleware  # ✅ Added for CORS
-import httpx
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
 import os
 
 app = FastAPI()
 
-# ✅ Add CORS middleware (required by SAC)
+# ✅ Enable CORS (important for SAC access)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can restrict this to SAP SAC domains later
+    allow_origins=["*"],  # Optional: restrict to SAC domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-security = HTTPBasic()
-
 # ✅ Supabase base URL (no table name)
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 
-# ✅ API key is set via Render environment variable
+# ✅ API key from environment
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
-
-# ✅ Allowed login credentials (Basic Auth)
-ALLOWED_USERS = {
-    "sap_user": "sap_password"
-}
-
-# ✅ Auth check
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
-    if ALLOWED_USERS.get(credentials.username) != credentials.password:
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-    return credentials.username
 
 # ✅ Optional root endpoint
 @app.get("/")
 def root():
-    return {"status": "FastAPI Supabase Proxy is running"}
+    return {"status": "FastAPI Supabase Proxy is running (no auth)"}
 
-# ✅ Main proxy endpoint for SAC
+# ✅ Main proxy endpoint (open access)
 @app.get("/odata/{table_name}")
 async def proxy_odata(
     table_name: str,
-    request: Request,
-    username: str = Depends(verify_credentials)
+    request: Request
 ):
     query_string = request.url.query
     full_url = f"{SUPABASE_URL}{table_name}"
