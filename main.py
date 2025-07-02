@@ -6,26 +6,28 @@ import os
 
 app = FastAPI()
 
-# ✅ Allow SAC or any domain (restrict in production)
+# ✅ Enable CORS (for SAP SAC)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can change this to specific SAC domains later
+    allow_origins=["*"],  # You can restrict this to SAC domains later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Supabase configuration
+# ✅ Supabase config
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
-SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")  # Set this in Render environment
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")  # Set in Render environment
 
-# ✅ Root endpoint
+# ✅ Root check
 @app.get("/")
 def root():
     return {"status": "Supabase proxy is running"}
 
-# ✅ @app.get("/odata/{table_name}/$metadata")
+# ✅ OData metadata endpoint (needed by SAC)
+@app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
+    # Static metadata for the 'flights' table from your CSV
     metadata_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
@@ -73,8 +75,7 @@ def metadata(table_name: str):
 </edmx:Edmx>"""
     return Response(content=metadata_xml, media_type="application/xml")
 
-
-# ✅ Main proxy endpoint (data from Supabase to SAC)
+# ✅ Main data endpoint
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
