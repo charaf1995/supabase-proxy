@@ -44,13 +44,18 @@ async def proxy_odata(table_name: str, request: Request):
         print("Supabase error:", response.status_code, response.text)
         raise HTTPException(status_code=500, detail=response.text)
 
-    return JSONResponse(
-        content={
+    supabase_data = response.json()
+
+    if isinstance(supabase_data, list):
+        supabase_data = {
             "@odata.context": f"$metadata#{table_name}",
-            "value": response.json()
-        },
-        media_type="application/json"
-    )
+            "value": supabase_data
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Supabase returned invalid data format")
+
+    return JSONResponse(content=supabase_data, media_type="application/json")
+
 
 # ✅ SAC-compatible $metadata XML endpoint
 @app.get("/odata/{table_name}/$metadata")
