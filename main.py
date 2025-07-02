@@ -1,16 +1,37 @@
-from fastapi.responses import Response
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+import httpx
+import os
 
+app = FastAPI()
+
+# ✅ Allow all origins (CORS for SAP SAC)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace with your SAC domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ✅ Supabase config
+SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
+
+@app.get("/")
+def root():
+    return {"status": "Supabase OData proxy is running"}
+
+# ✅ SAC-compatible $metadata endpoint
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
     metadata_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema Namespace="{table_name}Model"
-            xmlns="http://docs.oasis-open.org/odata/ns/edm">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}Model">
       <EntityType Name="{table_name}">
-        <Key>
-          <PropertyRef Name="Year"/>
-        </Key>
+        <Key><PropertyRef Name="Year"/></Key>
         <Property Name="Year" Type="Edm.Int64" Nullable="false"/>
         <Property Name="Month" Type="Edm.Int64"/>
         <Property Name="DayofMonth" Type="Edm.Int64"/>
@@ -48,3 +69,37 @@ def metadata(table_name: str):
   </edmx:DataServices>
 </edmx:Edmx>'''
     return Response(content=metadata_xml.strip(), media_type="application/xml")
+
+# ✅ Main OData-compatible endpoint
+@app.get("/odata/{table_name}")
+async def proxy_odata(table_name: str, request: Request):
+    query_string = request.url.query
+    full_url = f"{SUPABASE_URL}{table_name}"
+    if query_string:
+        full_url += f"?{query_string}"
+
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}",
+        "Accept": "application/json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(full_url, headers=headers)
+
+    if response.status_code != 200:
+        print("Supabase error:", response.status_code, response.text)
+        raise HTTPException(status_code=500, detail=response.text)
+
+    data = response.json()
+
+    if isinstance(data, list):
+        return JSONResponse(
+            content={
+                "@odata.context": f"$metadata#{table_name}",
+                "value": data
+            },
+            media_type="application/json"
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Supabase returned invalid data format")
