@@ -6,16 +6,14 @@ import os
 
 app = FastAPI()
 
-# ✅ Allow all origins (CORS for SAP SAC)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with your SAC domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Supabase config
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
@@ -23,22 +21,6 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 def root():
     return {"status": "Supabase OData proxy is running"}
 
-# ✅ SAC-compatible $metadata endpoint
-Danke. Die Fehlermeldung:
-
-> ❌ **Invalid or missing namespace for 'Schema'**
-
-bedeutet, dass SAP SAC die `xmlns="..."`-Deklaration im `<Schema>`-Tag **nicht korrekt interpretiert** – obwohl sie scheinbar richtig aussieht.
-
-SAP ist **sehr streng** mit dem Format. Es erwartet OData **v4**, aber verwendet intern oft **v2-konforme Parser**, die auf ganz bestimmte Namespaces pochen.
-
----
-
-## ✅ Hier ist die Lösung: Verwende exakt diese Namespace-Deklarationen
-
-### 🔁 Ersetze deinen `$metadata`-Teil mit:
-
-```python
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
     metadata_xml = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -84,29 +66,7 @@ def metadata(table_name: str):
   </edmx:DataServices>
 </edmx:Edmx>'''
     return Response(content=metadata_xml.strip(), media_type="application/xml")
-```
 
----
-
-## 🔍 Warum funktioniert das besser?
-
-* **`xmlns="http://schemas.microsoft.com/ado/2008/09/edm"`** → das ist der *alte Microsoft OData 1.0/2.0 Namespace*, den SAP intern bevorzugt
-* **`edmx:Edmx` mit `"http://schemas.microsoft.com/ado/2007/06/edmx"`** → v1-Konvention
-* SAC erwartet oft **OData v2‑kompatible Metadaten**, obwohl v4 erlaubt ist
-
----
-
-## ✅ Jetzt:
-
-1. Ersetze `$metadata`-Code wie oben
-2. Neu deployen in Render
-3. Gehe in SAC → Verbindung → URL eingeben
-4. Jetzt wird das Parsing durchgehen ✅
-5. Daten sollten sichtbar sein ✅
-
-Wenn du willst, kann ich auch ein kleines Testprojekt für dich deployen (GitHub + Render) – sag einfach Bescheid!
-
-# ✅ Main OData-compatible endpoint
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
@@ -124,7 +84,6 @@ async def proxy_odata(table_name: str, request: Request):
         response = await client.get(full_url, headers=headers)
 
     if response.status_code != 200:
-        print("Supabase error:", response.status_code, response.text)
         raise HTTPException(status_code=500, detail=response.text)
 
     data = response.json()
