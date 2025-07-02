@@ -6,41 +6,35 @@ import os
 
 app = FastAPI()
 
-# ✅ Allow SAC or any domain (restrict in production)
+# ✅ CORS aktivieren (z. B. für SAP SAC)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can change this to specific SAC domains later
+    allow_origins=["*"],  # Im Produktivbetrieb einschränken
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Supabase configuration
-SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/flights"
-SUPABASE_API_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByZmh3cnp0Ymtld2x1anphc3R0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NTE2OTUsImV4cCI6MjA2NTMyNzY5NX0.uVoR9hWAI7bcCOOZVazEEMabGJKIGQ74jDqP6q2HgvQ")  # Set this in Render environment
+# ✅ Supabase-Konfiguration
+SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
-# ✅ Root endpoint
 @app.get("/")
 def root():
-    return {"status": "Supabase proxy is running"}
+    return {"status": "Supabase proxy with metadata is running"}
 
-# ✅ OData metadata endpoint (needed for SAC to show fields)
+# ✅ Metadaten-Endpunkt für SAC
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
-    # Replace the fields below with your actual Supabase table columns and types
     metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}_schema">
       <EntityType Name="{table_name}">
         <Key>
-          <PropertyRef Name="id"/>
+          <PropertyRef Name="Year"/>
         </Key>
-        <Property Name="id" Type="Edm.Int32"/>
-        <Property Name="departure" Type="Edm.String"/>
-        <Property Name="arrival" Type="Edm.String"/>
-        <Property Name="delay" Type="Edm.Int32"/>
-        <!-- ➕ Add more <Property> elements here if your table has more columns -->
+{metadata_xml_fields}
       </EntityType>
       <EntityContainer Name="{table_name}Container">
         <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}"/>
@@ -50,7 +44,7 @@ def metadata(table_name: str):
 </edmx:Edmx>"""
     return Response(content=metadata_xml, media_type="application/xml")
 
-# ✅ Main proxy endpoint (data from Supabase to SAC)
+# ✅ Daten-Endpunkt (liefert Tabelle an SAC)
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
