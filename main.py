@@ -24,15 +24,15 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")  # Set in Render environment
 def root():
     return {"status": "Supabase proxy is running"}
 
-# ✅ OData metadata endpoint (needed by SAC)
+# ✅ from fastapi.responses import Response
+
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
-    # Static metadata for the 'flights' table from your CSV
-    metadata_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    metadata_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="flights_schema">
-      <EntityType Name="flights">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}_schema">
+      <EntityType Name="{table_name}">
         <Key>
           <PropertyRef Name="Year"/>
         </Key>
@@ -67,13 +67,13 @@ def metadata(table_name: str):
         <Property Name="LateAircraftDelay" Type="Edm.Double"/>
         <Property Name="Column1" Type="Edm.String"/>
       </EntityType>
-      <EntityContainer Name="flightsContainer">
-        <EntitySet Name="flights" EntityType="flights_schema.flights"/>
+      <EntityContainer Name="{table_name}Container">
+        <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}"/>
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>"""
-    return Response(content=metadata_xml, media_type="application/xml")
+    return Response(content=metadata_xml.strip(), media_type="application/xml")
 
 # ✅ Main data endpoint
 @app.get("/odata/{table_name}")
