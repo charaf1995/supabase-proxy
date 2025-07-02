@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 import httpx
 import os
-from fastapi.responses import Response
 
 app = FastAPI()
 
@@ -24,9 +24,7 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 def root():
     return {"status": "Supabase proxy is running"}
 
-# ✅ Metadata endpoint (dummy, SAC compatibility)
-
-
+# ✅ Metadata endpoint for SAC compatibility
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
     metadata_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -74,7 +72,7 @@ def metadata(table_name: str):
 </edmx:Edmx>'''
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Main proxy endpoint
+# ✅ Main proxy endpoint for SAC
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
@@ -95,10 +93,16 @@ async def proxy_odata(table_name: str, request: Request):
         print("Supabase error:", response.status_code, response.text)
         raise HTTPException(status_code=500, detail=response.text)
 
-    return JSONResponse(
-        content={
-            "@odata.context": f"$metadata#{table_name}",
-            "value": response.json()
-        },
-        media_type="application/json"
-    )
+    # ✅ Now correctly indented
+    supabase_data = response.json()
+
+    if isinstance(supabase_data, list):
+        return JSONResponse(
+            content={
+                "@odata.context": f"$metadata#{table_name}",
+                "value": supabase_data
+            },
+            media_type="application/json"
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Supabase returned invalid data format")
