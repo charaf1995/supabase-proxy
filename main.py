@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
 import httpx
 import os
+from fastapi.responses import Response
 
 app = FastAPI()
 
@@ -25,27 +25,27 @@ def root():
     return {"status": "Supabase proxy is running"}
 
 # ✅ Metadata endpoint (dummy, SAC compatibility)
+
+
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
-    # Minimal XML response to satisfy SAC's metadata check
-    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
-<edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
+    metadata_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://schemas.microsoft.com/ado/2008/09/edm" Namespace="{table_name}_schema">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}Model">
       <EntityType Name="{table_name}">
-        <Key>
-          <PropertyRef Name="id" />
-        </Key>
-        <Property Name="id" Type="Edm.Int32" Nullable="false" />
-        <!-- Add more fields as needed -->
+        <Key><PropertyRef Name="id"/></Key>
+        <Property Name="id" Type="Edm.Int32" Nullable="false"/>
+        <!-- Add more fields if you want -->
       </EntityType>
-      <EntityContainer Name="{table_name}Container">
-        <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}" />
+      <EntityContainer Name="Container">
+        <EntitySet Name="{table_name}" EntityType="{table_name}Model.{table_name}"/>
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
-</edmx:Edmx>"""
-    return Response(content=metadata_xml, media_type="application/xml")
+</edmx:Edmx>'''
+    return Response(content=metadata_xml.strip(), media_type="application/xml")
+
 
 # ✅ Main proxy endpoint
 @app.get("/odata/{table_name}")
