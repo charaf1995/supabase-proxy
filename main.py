@@ -11,36 +11,35 @@ def metadata(table_name: str):
         <Key>
           <PropertyRef Name="Year"/>
         </Key>
-        <Property Name="Year" Type="Edm.Int32" Nullable="false"/>
-        <Property Name="Month" Type="Edm.Int32"/>
-        <Property Name="DayofMonth" Type="Edm.Int32"/>
-        <Property Name="DayOfWeek" Type="Edm.Int32"/>
+        <Property Name="Year" Type="Edm.Int64" Nullable="false"/>
+        <Property Name="Month" Type="Edm.Int64"/>
+        <Property Name="DayofMonth" Type="Edm.Int64"/>
+        <Property Name="DayOfWeek" Type="Edm.Int64"/>
         <Property Name="DepTime" Type="Edm.String"/>
-        <Property Name="CRSDepTime" Type="Edm.String"/>
-        <Property Name="DepDelay" Type="Edm.String"/>
+        <Property Name="CRSDepTime" Type="Edm.Int64"/>
         <Property Name="ArrTime" Type="Edm.String"/>
-        <Property Name="CRSArrTime" Type="Edm.String"/>
-        <Property Name="ArrDelay" Type="Edm.String"/>
+        <Property Name="CRSArrTime" Type="Edm.Int64"/>
         <Property Name="UniqueCarrier" Type="Edm.String"/>
-        <Property Name="FlightNum" Type="Edm.String"/>
+        <Property Name="FlightNum" Type="Edm.Int64"/>
         <Property Name="TailNum" Type="Edm.String"/>
         <Property Name="ActualElapsedTime" Type="Edm.String"/>
-        <Property Name="CRSElapsedTime" Type="Edm.String"/>
+        <Property Name="CRSElapsedTime" Type="Edm.Int64"/>
         <Property Name="AirTime" Type="Edm.String"/>
+        <Property Name="ArrDelay" Type="Edm.String"/>
+        <Property Name="DepDelay" Type="Edm.String"/>
         <Property Name="Origin" Type="Edm.String"/>
         <Property Name="Dest" Type="Edm.String"/>
-        <Property Name="Distance" Type="Edm.Double"/>
+        <Property Name="Distance" Type="Edm.Int64"/>
         <Property Name="TaxiIn" Type="Edm.String"/>
         <Property Name="TaxiOut" Type="Edm.String"/>
         <Property Name="Cancelled" Type="Edm.String"/>
         <Property Name="CancellationCode" Type="Edm.String"/>
-        <Property Name="Diverted" Type="Edm.String"/>
+        <Property Name="Diverted" Type="Edm.Boolean"/>
         <Property Name="CarrierDelay" Type="Edm.String"/>
         <Property Name="WeatherDelay" Type="Edm.String"/>
         <Property Name="NASDelay" Type="Edm.String"/>
         <Property Name="SecurityDelay" Type="Edm.String"/>
         <Property Name="LateAircraftDelay" Type="Edm.String"/>
-        <Property Name="Column1" Type="Edm.String"/>
       </EntityType>
       <EntityContainer Name="Container">
         <EntitySet Name="{table_name}" EntityType="{table_name}Model.{table_name}"/>
