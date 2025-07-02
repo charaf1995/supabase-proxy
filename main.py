@@ -6,6 +6,7 @@ import os
 
 app = FastAPI()
 
+# ✅ CORS für SAP SAC
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,6 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ Supabase-Verbindung
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 
@@ -21,9 +23,10 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 def root():
     return {"status": "Supabase OData proxy is running"}
 
+# ✅ $metadata – SAP-kompatibel
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
-    metadata_xml = f'''<?xml version="1.0" encoding="utf-8"?>
+    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
   <edmx:DataServices>
     <Schema xmlns="http://schemas.microsoft.com/ado/2008/09/edm" Namespace="{table_name}_schema">
@@ -64,9 +67,10 @@ def metadata(table_name: str):
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
-</edmx:Edmx>'''
+</edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
+# ✅ Haupt-OData-Endpunkt – mit Feldnamen-Fix
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
@@ -86,15 +90,21 @@ async def proxy_odata(table_name: str, request: Request):
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail=response.text)
 
-    data = response.json()
+    raw_data = response.json()
 
-    if isinstance(data, list):
-        return JSONResponse(
-            content={
-                "@odata.context": f"$metadata#{table_name}",
-                "value": data
-            },
-            media_type="application/json"
-        )
-    else:
-        raise HTTPException(status_code=500, detail="Supabase returned invalid data format")
+    # 🔁 Korrigiere alle Feldnamen: z. B. "origin" → "Origin"
+    fixed_data = []
+    for row in raw_data:
+        fixed_row = {}
+        for key, value in row.items():
+            fixed_key = key[0].upper() + key[1:] if len(key) > 0 else key
+            fixed_row[fixed_key] = value
+        fixed_data.append(fixed_row)
+
+    return JSONResponse(
+        content={
+            "@odata.context": f"$metadata#{table_name}",
+            "value": fixed_data
+        },
+        media_type="application/json"
+    )
