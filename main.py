@@ -6,10 +6,9 @@ import os
 from email.parser import BytesParser
 from email.policy import default as default_policy
 
-# ✅ FastAPI-Instanz
 app = FastAPI()
 
-# ✅ CORS für SAP SAC
+# ✅ CORS für SAP SAC & Power BI
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,20 +23,22 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
     raise RuntimeError("SUPABASE_API_KEY is not set in environment variables.")
 
-# ✅ Root-Endpoint (Check)
 @app.get("/")
 def root():
-    return {"status": "Supabase OData proxy with batch is running"}
+    return {"status": "OData v4 Proxy with Supabase is running."}
 
-# ✅ $metadata-Endpoint
-@app.get("/odata/{table_name}/$metadata")
-def metadata(table_name: str):
-    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
-<edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
+# ✅ OData v4 $metadata-Endpoint (XML)
+@app.get("/odata/Flights/$metadata")
+def metadata():
+    metadata_xml = """<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://schemas.microsoft.com/ado/2008/09/edm" Namespace="{table_name}_schema">
-      <EntityType Name="{table_name}">
-        <Key><PropertyRef Name="Year" /></Key>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="flights_schema">
+      <EntityType Name="Flight">
+        <Key>
+          <PropertyRef Name="Year" />
+          <PropertyRef Name="FlightNum" />
+        </Key>
         <Property Name="Year" Type="Edm.Int64" Nullable="false" />
         <Property Name="Month" Type="Edm.Int64" />
         <Property Name="DayofMonth" Type="Edm.Int64" />
@@ -68,19 +69,20 @@ def metadata(table_name: str):
         <Property Name="SecurityDelay" Type="Edm.String" />
         <Property Name="LateAircraftDelay" Type="Edm.String" />
       </EntityType>
-      <EntityContainer Name="{table_name}Container">
-        <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}" />
+      <EntityContainer Name="FlightsContainer">
+        <EntitySet Name="Flights" EntityType="flights_schema.Flight" />
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
-</edmx:Edmx>"""
+</edmx:Edmx>
+"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Haupt-OData-Endpoint
-@app.get("/odata/{table_name}")
-async def proxy_odata(table_name: str, request: Request):
+# ✅ OData v4 GET-Endpoint (Supabase-Proxy)
+@app.get("/odata/Flights")
+async def get_flights(request: Request):
     query_string = request.url.query
-    full_url = f"{SUPABASE_URL}{table_name}"
+    full_url = f"{SUPABASE_URL}flights"
     if query_string:
         full_url += f"?{query_string}"
 
@@ -103,21 +105,21 @@ async def proxy_odata(table_name: str, request: Request):
     for row in raw_data:
         fixed_row = {}
         for key, value in row.items():
-            fixed_key = key[0].upper() + key[1:] if len(key) > 0 else key
+            fixed_key = key[0].upper() + key[1:] if key else key
             fixed_row[fixed_key] = value
         fixed_data.append(fixed_row)
 
     return JSONResponse(
         content={
-            "@odata.context": f"$metadata#{table_name}",
+            "@odata.context": "$metadata#Flights",
             "value": fixed_data
         },
         media_type="application/json"
     )
 
-# ✅ Batch-Endpoint (Produktionsreif, für SAP SAC GET-Batch)
-@app.post("/odata/{table_name}/$batch")
-async def batch_handler(table_name: str, request: Request):
+# ✅ OData v4 $batch-Endpoint (GET-only, für SAP SAC & Power BI)
+@app.post("/odata/Flights/$batch")
+async def batch_handler(request: Request):
     content_type = request.headers.get("Content-Type", "")
     if "multipart/mixed" not in content_type:
         raise HTTPException(status_code=400, detail="Invalid Content-Type for Batch")
@@ -153,7 +155,7 @@ async def batch_handler(table_name: str, request: Request):
             "path": path.split("?")[0],
         }, receive=None)
 
-        response = await proxy_odata(table_name, req)
+        response = await get_flights(req)
         response_body = response.body.decode()
 
         part_response = (
