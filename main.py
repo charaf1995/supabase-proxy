@@ -17,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Supabase-URL & API-Key
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
@@ -27,17 +26,14 @@ if not SUPABASE_API_KEY:
 def root():
     return {"status": "OData v4 Proxy with Supabase is running."}
 
-# ✅ Dynamisches OData v4 $metadata (für beliebige Tabelle)
+# ✅ OData v4 $metadata Endpoint (SAP-kompatibel, Namespace-Fix)
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
-    entity_type = table_name.capitalize()
-    entity_set = table_name.capitalize() + "s"
-
-    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+    metadata_xml = """<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}_schema">
-      <EntityType Name="{entity_type}">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="FlightsService">
+      <EntityType Name="Flight">
         <Key>
           <PropertyRef Name="Year" />
           <PropertyRef Name="FlightNum" />
@@ -72,16 +68,15 @@ def metadata(table_name: str):
         <Property Name="SecurityDelay" Type="Edm.String" />
         <Property Name="LateAircraftDelay" Type="Edm.String" />
       </EntityType>
-      <EntityContainer Name="{entity_set}Container">
-        <EntitySet Name="{entity_set}" EntityType="{table_name}_schema.{entity_type}" />
+      <EntityContainer Name="FlightsContainer">
+        <EntitySet Name="Flights" EntityType="FlightsService.Flight" />
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
-</edmx:Edmx>
-"""
+</edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ OData v4 GET-Endpoint (dynamisch, Supabase-Proxy)
+# ✅ OData v4 GET-Endpoint (Supabase Proxy, flexibel)
 @app.get("/odata/{table_name}")
 async def get_data(table_name: str, request: Request):
     query_string = request.url.query
@@ -103,7 +98,6 @@ async def get_data(table_name: str, request: Request):
 
     raw_data = response.json()
 
-    # Feldnamen-Fix (PascalCase)
     fixed_data = []
     for row in raw_data:
         fixed_row = {}
@@ -112,16 +106,15 @@ async def get_data(table_name: str, request: Request):
             fixed_row[fixed_key] = value
         fixed_data.append(fixed_row)
 
-    entity_set = table_name.capitalize() + "s"
     return JSONResponse(
         content={
-            "@odata.context": f"$metadata#{entity_set}",
+            "@odata.context": "$metadata#Flights",
             "value": fixed_data
         },
         media_type="application/json"
     )
 
-# ✅ OData v4 $batch-Endpoint (GET-only, dynamisch)
+# ✅ OData v4 $batch Endpoint (GET-only, flexibel)
 @app.post("/odata/{table_name}/$batch")
 async def batch_handler(table_name: str, request: Request):
     content_type = request.headers.get("Content-Type", "")
@@ -143,7 +136,6 @@ async def batch_handler(table_name: str, request: Request):
         if not lines:
             continue
 
-        # Nur GET erlaubt
         request_line = lines[0]
         method, path, _ = request_line.split()
         if method != "GET":
@@ -181,3 +173,4 @@ async def batch_handler(table_name: str, request: Request):
         content=batch_response,
         media_type=f"multipart/mixed; boundary={response_boundary}"
     )
+
