@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Supabase-Verbindung
+# ✅ Supabase-URL & API-Key
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
@@ -27,14 +27,17 @@ if not SUPABASE_API_KEY:
 def root():
     return {"status": "OData v4 Proxy with Supabase is running."}
 
-# ✅ OData v4 $metadata-Endpoint (XML)
-@app.get("/odata/Flights/$metadata")
-def metadata():
-    metadata_xml = """<?xml version="1.0" encoding="utf-8"?>
+# ✅ Dynamisches OData v4 $metadata (für beliebige Tabelle)
+@app.get("/odata/{table_name}/$metadata")
+def metadata(table_name: str):
+    entity_type = table_name.capitalize()
+    entity_set = table_name.capitalize() + "s"
+
+    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="flights_schema">
-      <EntityType Name="Flight">
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{table_name}_schema">
+      <EntityType Name="{entity_type}">
         <Key>
           <PropertyRef Name="Year" />
           <PropertyRef Name="FlightNum" />
@@ -69,8 +72,8 @@ def metadata():
         <Property Name="SecurityDelay" Type="Edm.String" />
         <Property Name="LateAircraftDelay" Type="Edm.String" />
       </EntityType>
-      <EntityContainer Name="FlightsContainer">
-        <EntitySet Name="Flights" EntityType="flights_schema.Flight" />
+      <EntityContainer Name="{entity_set}Container">
+        <EntitySet Name="{entity_set}" EntityType="{table_name}_schema.{entity_type}" />
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
@@ -78,11 +81,11 @@ def metadata():
 """
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ OData v4 GET-Endpoint (Supabase-Proxy)
-@app.get("/odata/Flights")
-async def get_flights(request: Request):
+# ✅ OData v4 GET-Endpoint (dynamisch, Supabase-Proxy)
+@app.get("/odata/{table_name}")
+async def get_data(table_name: str, request: Request):
     query_string = request.url.query
-    full_url = f"{SUPABASE_URL}flights"
+    full_url = f"{SUPABASE_URL}{table_name}"
     if query_string:
         full_url += f"?{query_string}"
 
@@ -109,17 +112,18 @@ async def get_flights(request: Request):
             fixed_row[fixed_key] = value
         fixed_data.append(fixed_row)
 
+    entity_set = table_name.capitalize() + "s"
     return JSONResponse(
         content={
-            "@odata.context": "$metadata#Flights",
+            "@odata.context": f"$metadata#{entity_set}",
             "value": fixed_data
         },
         media_type="application/json"
     )
 
-# ✅ OData v4 $batch-Endpoint (GET-only, für SAP SAC & Power BI)
-@app.post("/odata/Flights/$batch")
-async def batch_handler(request: Request):
+# ✅ OData v4 $batch-Endpoint (GET-only, dynamisch)
+@app.post("/odata/{table_name}/$batch")
+async def batch_handler(table_name: str, request: Request):
     content_type = request.headers.get("Content-Type", "")
     if "multipart/mixed" not in content_type:
         raise HTTPException(status_code=400, detail="Invalid Content-Type for Batch")
@@ -155,7 +159,7 @@ async def batch_handler(request: Request):
             "path": path.split("?")[0],
         }, receive=None)
 
-        response = await get_flights(req)
+        response = await get_data(table_name, req)
         response_body = response.body.decode()
 
         part_response = (
