@@ -24,15 +24,15 @@ if not SUPABASE_API_KEY:
 
 @app.get("/")
 def root():
-    return {"status": "OData v4 Proxy with Supabase is running."}
+    return {"status": "OData v1 Proxy with Supabase is running."}
 
-# ✅ OData v4 $metadata Endpoint (SAP-kompatibel, korrekter Namespace & Container)
+# ✅ OData v1 $metadata Endpoint (SAP-kompatibel)
 @app.get("/odata/Flights/$metadata")
 def metadata():
     metadata_xml = """<?xml version="1.0" encoding="utf-8"?>
-<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
+<edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="com.example.flights">
+    <Schema xmlns="http://schemas.microsoft.com/ado/2008/09/edm" Namespace="FlightsService">
       <EntityType Name="Flight">
         <Key>
           <PropertyRef Name="Year" />
@@ -68,15 +68,16 @@ def metadata():
         <Property Name="SecurityDelay" Type="Edm.String" />
         <Property Name="LateAircraftDelay" Type="Edm.String" />
       </EntityType>
-      <EntityContainer Name="Container">
-        <EntitySet Name="Flights" EntityType="com.example.flights.Flight" />
+      <EntityContainer Name="Container" m:IsDefaultEntityContainer="true"
+        xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
+        <EntitySet Name="Flights" EntityType="FlightsService.Flight" />
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ OData v4 GET Endpoint (Supabase Proxy, SAP-kompatibel)
+# ✅ OData v1 GET Endpoint (Supabase Proxy)
 @app.get("/odata/Flights")
 async def get_flights(request: Request):
     query_string = request.url.query
@@ -109,13 +110,14 @@ async def get_flights(request: Request):
 
     return JSONResponse(
         content={
-            "@odata.context": "$metadata#Flights",
-            "value": fixed_data
+            "d": {
+                "results": fixed_data
+            }
         },
         media_type="application/json"
     )
 
-# ✅ OData v4 $batch Endpoint (GET-only, SAP-kompatibel)
+# ✅ OData v1 $batch Endpoint (GET-only, SAP-kompatibel)
 @app.post("/odata/Flights/$batch")
 async def batch_handler(request: Request):
     content_type = request.headers.get("Content-Type", "")
