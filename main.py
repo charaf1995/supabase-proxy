@@ -77,7 +77,7 @@ async def get_flights(request: Request):
     )
 
 # ✅ OData v4 $batch Endpoint (GET-only, SAP Datasphere-kompatibel)
-@app.post("/odata/Flights/$batch")
+@app.post("/odata/flights/$batch")
 async def batch_handler(request: Request):
     content_type = request.headers.get("Content-Type", "")
     if "multipart/mixed" not in content_type:
