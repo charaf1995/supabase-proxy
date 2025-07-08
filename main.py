@@ -8,7 +8,7 @@ from email.policy import default as default_policy
 
 app = FastAPI()
 
-# ✅ CORS für SAP Datasphere & SAC
+# ✅ Allow CORS (adjust for production)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,42 +17,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
+# ✅ Supabase Config
+SUPABASE_URL = "https://your-project.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
     raise RuntimeError("SUPABASE_API_KEY is not set")
 
 @app.get("/")
 def root():
-    return {"status": "OData v4 Proxy with Supabase for SAP Datasphere is running"}
+    return {"status": "Dynamic Supabase OData v4 Proxy is running"}
 
-# ✅ OData v4 $metadata Endpoint (SAP Datasphere kompatibel)
-@app.get("/odata/Flights/$metadata")
-def metadata():
-    metadata_xml = """<?xml version="1.0" encoding="utf-8"?>
+# ✅ Dynamic $metadata (Minimal Example, Auto Table)
+@app.get("/odata/{table_name}/$metadata")
+def metadata(table_name: str):
+    safe_table = table_name.lower()
+    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
-    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="FlightsService">
-      <EntityType Name="Flight">
-        <Key>
-          <PropertyRef Name="Id" />
-        </Key>
-        <Property Name="Id" Type="Edm.Int32" Nullable="false" />
-        <!-- Weitere Felder hier -->
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{safe_table}_schema">
+      <EntityType Name="{safe_table}">
+        <Key><PropertyRef Name="id" /></Key>
+        <Property Name="id" Type="Edm.Int32" Nullable="false" />
       </EntityType>
       <EntityContainer Name="Container">
-        <EntitySet Name="Flights" EntityType="FlightsService.Flight" />
+        <EntitySet Name="{safe_table}" EntityType="{safe_table}_schema.{safe_table}" />
       </EntityContainer>
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ OData v4 GET Endpoint (Supabase Proxy)
-@app.get("/odata/Flights")
-async def get_flights(request: Request):
+# ✅ Universal Data Proxy (Dynamic Table)
+@app.get("/odata/{table_name}")
+async def proxy_odata(table_name: str, request: Request):
+    safe_table = table_name.lower()
     query_string = request.url.query
-    full_url = f"{SUPABASE_URL}flights"
+    full_url = f"{SUPABASE_URL}{safe_table}"
     if query_string:
         full_url += f"?{query_string}"
 
@@ -70,15 +70,16 @@ async def get_flights(request: Request):
 
     return JSONResponse(
         content={
-            "@odata.context": "$metadata#Flights",
+            "@odata.context": f"$metadata#{safe_table}",
             "value": response.json()
         },
         media_type="application/json"
     )
 
-# ✅ OData v4 $batch Endpoint (GET-only, SAP Datasphere-kompatibel)
-@app.post("/odata/flights/$batch")
-async def batch_handler(request: Request):
+# ✅ Universal $batch (GET-only, Dynamic Tables)
+@app.post("/odata/{table_name}/$batch")
+async def batch_handler(table_name: str, request: Request):
+    safe_table = table_name.lower()
     content_type = request.headers.get("Content-Type", "")
     if "multipart/mixed" not in content_type:
         raise HTTPException(status_code=400, detail="Invalid Content-Type for Batch")
@@ -113,7 +114,7 @@ async def batch_handler(request: Request):
             "path": path.split("?")[0],
         }, receive=None)
 
-        response = await get_flights(req)
+        response = await proxy_odata(safe_table, req)
         response_body = response.body.decode()
 
         part_response = (
