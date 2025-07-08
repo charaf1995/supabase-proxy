@@ -8,7 +8,6 @@ from email.policy import default as default_policy
 
 app = FastAPI()
 
-# ✅ Allow CORS (adjust for production)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,27 +16,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Supabase Config
-SUPABASE_URL = "https://your-project.supabase.co/rest/v1/"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
-if not SUPABASE_API_KEY:
-    raise RuntimeError("SUPABASE_API_KEY is not set")
+if not SUPABASE_URL or not SUPABASE_API_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_API_KEY must be set.")
 
 @app.get("/")
 def root():
-    return {"status": "Dynamic Supabase OData v4 Proxy is running"}
+    return {"status": "Supabase OData v4 Proxy with Auto Metadata is running"}
 
-# ✅ Dynamic $metadata (Minimal Example, Auto Table)
 @app.get("/odata/{table_name}/$metadata")
-def metadata(table_name: str):
+async def metadata(table_name: str):
     safe_table = table_name.lower()
+
+    query_url = f"{SUPABASE_URL}information_schema.columns"
+    params = {
+        "select": "column_name,data_type,is_nullable",
+        "table_name": f"eq.{safe_table}"
+    }
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}"
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(query_url, params=params, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Failed to fetch table schema.")
+
+    columns = response.json()
+    if not columns:
+        raise HTTPException(status_code=404, detail="Table not found.")
+
     metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
   <edmx:DataServices>
     <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="{safe_table}_schema">
       <EntityType Name="{safe_table}">
-        <Key><PropertyRef Name="id" /></Key>
-        <Property Name="id" Type="Edm.Int32" Nullable="false" />
+"""
+
+    for col in columns:
+        col_name = col["column_name"]
+        data_type = col["data_type"]
+        is_nullable = col["is_nullable"] == "YES"
+        edm_type = "Edm.String"
+        if "int" in data_type:
+            edm_type = "Edm.Int32"
+        elif "numeric" in data_type or "double" in data_type:
+            edm_type = "Edm.Double"
+        elif "bool" in data_type:
+            edm_type = "Edm.Boolean"
+        nullable_str = "true" if is_nullable else "false"
+        metadata_xml += f'        <Property Name="{col_name}" Type="{edm_type}" Nullable="{nullable_str}" />\n'
+
+    key_col = columns[0]["column_name"]
+    metadata_xml += f"""      <Key>
+        <PropertyRef Name="{key_col}" />
+      </Key>
       </EntityType>
       <EntityContainer Name="Container">
         <EntitySet Name="{safe_table}" EntityType="{safe_table}_schema.{safe_table}" />
@@ -45,9 +81,9 @@ def metadata(table_name: str):
     </Schema>
   </edmx:DataServices>
 </edmx:Edmx>"""
+
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Universal Data Proxy (Dynamic Table)
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     safe_table = table_name.lower()
@@ -72,11 +108,9 @@ async def proxy_odata(table_name: str, request: Request):
         content={
             "@odata.context": f"$metadata#{safe_table}",
             "value": response.json()
-        },
-        media_type="application/json"
+        }
     )
 
-# ✅ Universal $batch (GET-only, Dynamic Tables)
 @app.post("/odata/{table_name}/$batch")
 async def batch_handler(table_name: str, request: Request):
     safe_table = table_name.lower()
@@ -86,7 +120,6 @@ async def batch_handler(table_name: str, request: Request):
 
     boundary = content_type.split("boundary=")[-1]
     body = await request.body()
-
     parser = BytesParser(policy=default_policy)
     msg = parser.parsebytes(
         b"Content-Type: " + content_type.encode() + b"\n\n" + body
