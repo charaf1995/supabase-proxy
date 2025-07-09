@@ -1,19 +1,12 @@
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import httpx
 import os
 from email.parser import BytesParser
 from email.policy import default as default_policy
-from dotenv import load_dotenv
-
-# ✅ Lade Umgebungsvariablen (.env)
-load_dotenv()
-
 app = FastAPI()
-
-# ✅ CORS für SAP SAC / DataSphere (erforderlich)
+# ✅ CORS für SAP SAC
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,30 +21,13 @@ SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
     raise RuntimeError("SUPABASE_API_KEY is not set in environment variables.")
 
-# ✅ Basic Auth (Username/Passwort)
-security = HTTPBasic()
-BASIC_AUTH_USERNAME = os.getenv("BASIC_AUTH_USERNAME")
-BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD")
-
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
-    if (
-        credentials.username != BASIC_AUTH_USERNAME
-        or credentials.password != BASIC_AUTH_PASSWORD
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-# ✅ Status-Endpunkt
 @app.get("/")
 def root():
-    return {"status": "Supabase OData proxy with batch and Basic Auth is running"}
+    return {"status": "Supabase OData proxy with batch is running"}
 
-# ✅ $metadata – OData-kompatibel
+# ✅ $metadata – SAP-kompatibel
 @app.get("/odata/{table_name}/$metadata")
-def metadata(table_name: str, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
+def metadata(table_name: str):
     metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
   <edmx:DataServices>
@@ -96,9 +72,9 @@ def metadata(table_name: str, credentials: HTTPBasicCredentials = Depends(verify
 </edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Haupt-OData-Endpunkt
+# ✅ Haupt-OData-Endpunkt – mit Feldnamen-Fix
 @app.get("/odata/{table_name}")
-async def proxy_odata(table_name: str, request: Request, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
+async def proxy_odata(table_name: str, request: Request):
     query_string = request.url.query
     full_url = f"{SUPABASE_URL}{table_name}"
     if query_string:
@@ -118,19 +94,26 @@ async def proxy_odata(table_name: str, request: Request, credentials: HTTPBasicC
 
     raw_data = response.json()
 
+    # 🔁 Korrigiere alle Feldnamen: z. B. "origin" → "Origin"
     fixed_data = []
     for row in raw_data:
-        fixed_row = {key[0].upper() + key[1:] if key else key: value for key, value in row.items()}
+        fixed_row = {}
+        for key, value in row.items():
+            fixed_key = key[0].upper() + key[1:] if len(key) > 0 else key
+            fixed_row[fixed_key] = value
         fixed_data.append(fixed_row)
 
     return JSONResponse(
-        content={"@odata.context": f"$metadata#{table_name}", "value": fixed_data},
+        content={
+            "@odata.context": f"$metadata#{table_name}",
+            "value": fixed_data
+        },
         media_type="application/json"
     )
 
-# ✅ $batch-Endpunkt (SAP-kompatibel)
+# ✅ $batch-Endpunkt (minimaler, lauffähiger Dummy für SAP SAC)
 @app.post("/odata/{table_name}/$batch")
-async def batch_handler(table_name: str, request: Request, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
+async def batch_handler(table_name: str, request: Request):
     content_type = request.headers.get("Content-Type", "")
     if "multipart/mixed" not in content_type:
         raise HTTPException(status_code=400, detail="Invalid Content-Type")
@@ -138,8 +121,11 @@ async def batch_handler(table_name: str, request: Request, credentials: HTTPBasi
     boundary = content_type.split("boundary=")[-1]
     body = await request.body()
 
+    # Parse multipart/mixed body
     parser = BytesParser(policy=default_policy)
-    msg = parser.parsebytes(b"Content-Type: " + content_type.encode() + b"\n\n" + body)
+    msg = parser.parsebytes(
+        b"Content-Type: " + content_type.encode() + b"\n\n" + body
+    )
     responses = []
     for part in msg.iter_parts():
         part_body = part.get_content()
@@ -148,7 +134,11 @@ async def batch_handler(table_name: str, request: Request, credentials: HTTPBasi
         method, path, _ = request_line.split()
         if method != "GET":
             raise HTTPException(status_code=400, detail="Only GET supported in batch")
+
+        # Extrahiere Query
         query = path.split("?", 1)[1] if "?" in path else ""
+
+        # Lokaler FastAPI-Call (interner Aufruf)
         req = Request({
             "type": "http",
             "method": "GET",
@@ -156,12 +146,14 @@ async def batch_handler(table_name: str, request: Request, credentials: HTTPBasi
             "headers": [],
             "path": path.split("?")[0],
         }, receive=None)
+
+        # Interner Aufruf deines Proxy-Endpunkts
         response = await proxy_odata(table_name, req)
         responses.append({
             "status_code": 200,
             "body": response.body.decode()
         })
-
+    # Baue Batch-Response
     batch_response = ""
     for resp in responses:
         batch_response += f"--batch_response_boundary\n"
