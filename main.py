@@ -29,8 +29,8 @@ if not SUPABASE_API_KEY:
 
 # ✅ Basic Auth (Username/Passwort)
 security = HTTPBasic()
-BASIC_AUTH_USERNAME = os.getenv("BASIC_AUTH_USERNAME")
-BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD")
+BASIC_AUTH_USERNAME = os.getenv("user")
+BASIC_AUTH_PASSWORD = os.getenv("sapsap")
 
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     if (
