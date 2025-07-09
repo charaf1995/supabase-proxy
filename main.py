@@ -9,7 +9,7 @@ from email.policy import default as default_policy
 
 app = FastAPI()
 
-# ✅ CORS für SAP SAC / DataSphere
+# ✅ CORS for SAP SAC / DataSphere
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Supabase-Verbindung
+# ✅ Supabase connection
 SUPABASE_URL = "https://prfhwrztbkewlujzastt.supabase.co/rest/v1/"
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 if not SUPABASE_API_KEY:
@@ -26,9 +26,9 @@ if not SUPABASE_API_KEY:
 
 @app.get("/")
 def root():
-    return {"status": "Supabase OData proxy with batch and OData mapping is running"}
+    return {"status": "Supabase OData proxy (optimized) is running"}
 
-# ✅ $metadata – SAP-kompatibel
+# ✅ $metadata – SAP compatible
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str):
     metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -39,7 +39,7 @@ def metadata(table_name: str):
         <Key><PropertyRef Name="Year" /></Key>
         <Property Name="Year" Type="Edm.Int64" Nullable="false" />
         <Property Name="Month" Type="Edm.Int64" />
-        <!-- (Rest der Spalten bleibt gleich – du kannst sie ergänzen) -->
+        <!-- Add your other fields here -->
       </EntityType>
       <EntityContainer Name="{table_name}Container">
         <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}" />
@@ -49,25 +49,24 @@ def metadata(table_name: str):
 </edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Haupt-OData-Endpunkt mit Query-Konverter
+# ✅ Main OData endpoint (optimized)
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request):
     raw_query = request.url.query
     params = parse_qs(raw_query)
 
-    # $select → select
+    # Auto-convert $select → select
     if '$select' in params:
         params['select'] = params.pop('$select')
 
-    # Optional: Einfaches $filter Mapping (nur = Filter)
+    # Simple $filter conversion (only for "eq")
     if '$filter' in params:
         filter_value = params.pop('$filter')[0]
-        # Beispiel: $filter=Year eq 2024 → Year=eq.2024
         if ' eq ' in filter_value:
             column, value = filter_value.split(' eq ')
             params[column] = f"eq.{value}"
 
-    # Query neu bauen:
+    # Build final query string
     query_string = urlencode(params, doseq=True)
 
     full_url = f"{SUPABASE_URL}{table_name}"
@@ -80,7 +79,7 @@ async def proxy_odata(table_name: str, request: Request):
         "Accept": "application/json"
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10) as client:  # 10 sec timeout
         response = await client.get(full_url, headers=headers)
 
     if response.status_code != 200:
@@ -88,11 +87,11 @@ async def proxy_odata(table_name: str, request: Request):
 
     raw_data = response.json()
 
-    # 🔁 Feldnamen korrigieren: z. B. "origin" → "Origin"
-    fixed_data = []
-    for row in raw_data:
-        fixed_row = {key[0].upper() + key[1:] if key else key: value for key, value in row.items()}
-        fixed_data.append(fixed_row)
+    # ✅ Fast field name fix (optimized)
+    fixed_data = [
+        {key.capitalize(): value for key, value in row.items()}
+        for row in raw_data
+    ]
 
     return JSONResponse(
         content={
@@ -102,7 +101,7 @@ async def proxy_odata(table_name: str, request: Request):
         media_type="application/json"
     )
 
-# ✅ $batch-Endpunkt (SAP-kompatibel)
+# ✅ Batch endpoint (optimized)
 @app.post("/odata/{table_name}/$batch")
 async def batch_handler(table_name: str, request: Request):
     content_type = request.headers.get("Content-Type", "")
@@ -134,6 +133,7 @@ async def batch_handler(table_name: str, request: Request):
             "path": path.split("?")[0],
         }, receive=None)
 
+        # Direct function call (no HTTP request overhead)
         response = await proxy_odata(table_name, req)
         responses.append({
             "status_code": 200,
