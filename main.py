@@ -8,11 +8,12 @@ from email.parser import BytesParser
 from email.policy import default as default_policy
 from dotenv import load_dotenv
 
+# ✅ Lade Umgebungsvariablen (.env)
 load_dotenv()
 
 app = FastAPI()
 
-# ✅ CORS für SAP SAC
+# ✅ CORS für SAP SAC / DataSphere (erforderlich)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,6 +32,7 @@ if not SUPABASE_API_KEY:
 security = HTTPBasic()
 BASIC_AUTH_USERNAME = os.getenv("BASIC_AUTH_USERNAME")
 BASIC_AUTH_PASSWORD = os.getenv("BASIC_AUTH_PASSWORD")
+
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     if (
         credentials.username != BASIC_AUTH_USERNAME
@@ -42,17 +44,59 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
 
+# ✅ Status-Endpunkt
 @app.get("/")
 def root():
     return {"status": "Supabase OData proxy with batch and Basic Auth is running"}
 
-# ✅ $metadata – SAP-kompatibel, mit Auth
+# ✅ $metadata – OData-kompatibel
 @app.get("/odata/{table_name}/$metadata")
 def metadata(table_name: str, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
-    metadata_xml = """<?xml ...>"""  # (dein vorhandenes Metadata XML bleibt hier gleich)
+    metadata_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" Version="1.0">
+  <edmx:DataServices>
+    <Schema xmlns="http://schemas.microsoft.com/ado/2008/09/edm" Namespace="{table_name}_schema">
+      <EntityType Name="{table_name}">
+        <Key><PropertyRef Name="Year" /></Key>
+        <Property Name="Year" Type="Edm.Int64" Nullable="false" />
+        <Property Name="Month" Type="Edm.Int64" />
+        <Property Name="DayofMonth" Type="Edm.Int64" />
+        <Property Name="DayOfWeek" Type="Edm.Int64" />
+        <Property Name="DepTime" Type="Edm.String" />
+        <Property Name="CRSDepTime" Type="Edm.Int64" />
+        <Property Name="ArrTime" Type="Edm.String" />
+        <Property Name="CRSArrTime" Type="Edm.Int64" />
+        <Property Name="UniqueCarrier" Type="Edm.String" />
+        <Property Name="FlightNum" Type="Edm.Int64" />
+        <Property Name="TailNum" Type="Edm.String" />
+        <Property Name="ActualElapsedTime" Type="Edm.String" />
+        <Property Name="CRSElapsedTime" Type="Edm.Int64" />
+        <Property Name="AirTime" Type="Edm.String" />
+        <Property Name="ArrDelay" Type="Edm.String" />
+        <Property Name="DepDelay" Type="Edm.String" />
+        <Property Name="Origin" Type="Edm.String" />
+        <Property Name="Dest" Type="Edm.String" />
+        <Property Name="Distance" Type="Edm.Int64" />
+        <Property Name="TaxiIn" Type="Edm.String" />
+        <Property Name="TaxiOut" Type="Edm.String" />
+        <Property Name="Cancelled" Type="Edm.String" />
+        <Property Name="CancellationCode" Type="Edm.String" />
+        <Property Name="Diverted" Type="Edm.Boolean" />
+        <Property Name="CarrierDelay" Type="Edm.String" />
+        <Property Name="WeatherDelay" Type="Edm.String" />
+        <Property Name="NASDelay" Type="Edm.String" />
+        <Property Name="SecurityDelay" Type="Edm.String" />
+        <Property Name="LateAircraftDelay" Type="Edm.String" />
+      </EntityType>
+      <EntityContainer Name="{table_name}Container">
+        <EntitySet Name="{table_name}" EntityType="{table_name}_schema.{table_name}" />
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>"""
     return Response(content=metadata_xml.strip(), media_type="application/xml")
 
-# ✅ Haupt-OData-Endpunkt – mit Auth
+# ✅ Haupt-OData-Endpunkt
 @app.get("/odata/{table_name}")
 async def proxy_odata(table_name: str, request: Request, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
     query_string = request.url.query
@@ -84,7 +128,7 @@ async def proxy_odata(table_name: str, request: Request, credentials: HTTPBasicC
         media_type="application/json"
     )
 
-# ✅ $batch-Endpunkt mit Auth
+# ✅ $batch-Endpunkt (SAP-kompatibel)
 @app.post("/odata/{table_name}/$batch")
 async def batch_handler(table_name: str, request: Request, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
     content_type = request.headers.get("Content-Type", "")
